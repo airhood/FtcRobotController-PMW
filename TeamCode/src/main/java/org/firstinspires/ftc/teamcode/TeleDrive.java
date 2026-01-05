@@ -1,7 +1,10 @@
 package org.firstinspires.ftc.teamcode;
 
+import android.graphics.Color;
+
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
@@ -23,6 +26,7 @@ import org.firstinspires.ftc.vision.VisionPortal;
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
 import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
@@ -35,23 +39,23 @@ public class TeleDrive extends LinearOpMode {
     private IMU imu;
     private DcMotor motorLeft;
     private DcMotor motorRight;
-    private DcMotor motorBallIn;
-    private DcMotor motorBallOut;
+    private DcMotor motorStorage;
+    private DcMotor motorShoot;
     private Servo servoLoadBall1;
     private Servo servoLoadBall2;
     private Servo servoLoadBall3;
     private Servo servoYaw;
     private Servo servoPitch;
 
+    private NormalizedColorSensor colorSensor1;
+    private NormalizedColorSensor colorSensor2;
+    private NormalizedColorSensor colorSensor3;
+
     private Position cameraPosition = new Position(DistanceUnit.MM, 0, 0, 0, 0);
     private YawPitchRollAngles cameraOrientation = new YawPitchRollAngles(AngleUnit.DEGREES, 0, -90, 0, 0);
 
     private AprilTagProcessor aprilTagProcessor;
     private VisionPortal visionPortal;
-
-    private NormalizedColorSensor colorSensor1;
-    private NormalizedColorSensor colorSensor2;
-    private NormalizedColorSensor colorSensor3;
 
     static final double COUNTS_PER_MOTOR_REV = 28;
     static final double DRIVE_GEAR_REDUCTION = 19.2;
@@ -76,13 +80,28 @@ public class TeleDrive extends LinearOpMode {
 
     static final float COLOR_SENSOR_GAIN = 0;
 
+    private static final double DISTANCE_THRESHOLD_MM = 50.0;
+    private static final double COLOR_SIMILARITY_THRESHOLD = 0.4;
+    private static final List<float[]> PURPLE_SAMPLES = Arrays.asList(
+            new float[]{290, 0.7f, 0.5f},
+            new float[]{300, 0.8f, 0.6f},
+            new float[]{310, 0.75f, 0.55f},
+            new float[]{295, 0.65f, 0.45f}
+    );
+    private static final List<float[]> GREEN_SAMPLES = Arrays.asList(
+            new float[]{110, 0.8f, 0.7f},
+            new float[]{120, 0.85f, 0.75f},
+            new float[]{130, 0.8f, 0.7f},
+            new float[]{115, 0.75f, 0.65f}
+    );
+
     @Override
     public void runOpMode() {
         imu = hardwareMap.get(IMU.class, "imu");
         motorLeft = hardwareMap.get(DcMotor.class, "motor1");
         motorRight = hardwareMap.get(DcMotor.class, "motor2");
-        motorBallIn = hardwareMap.get(DcMotor.class, "motor3");
-        motorBallOut = hardwareMap.get(DcMotor.class, "motor4");
+        motorStorage = hardwareMap.get(DcMotor.class, "motor3");
+        motorShoot = hardwareMap.get(DcMotor.class, "motor4");
         servoLoadBall1 = hardwareMap.get(Servo.class, "servo1");
         servoLoadBall2 = hardwareMap.get(Servo.class, "servo2");
         servoLoadBall3 = hardwareMap.get(Servo.class, "servo3");
@@ -134,8 +153,12 @@ public class TeleDrive extends LinearOpMode {
 
         motorLeft.setDirection(DcMotorSimple.Direction.REVERSE);
         motorRight.setDirection(DcMotorSimple.Direction.FORWARD);
+        motorStorage.setDirection(DcMotorSimple.Direction.FORWARD);
+        motorShoot.setDirection(DcMotorSimple.Direction.FORWARD);
 
         while (opModeIsActive()) {
+            checkStorage();
+
             telemetryAprilTag();
 
             moveWheel();
@@ -373,5 +396,100 @@ public class TeleDrive extends LinearOpMode {
                 .addData("Value" ,"%.3f", hsvValues3[2])
                 .addData("Alpha", "%.3f", colors3.alpha)
                 .addData("Distance (mm)", "%.3f", distance3);
+    }
+
+    private double hsvDistance(float[] hsv1, float[] hsv2) {
+        float hueDiff = Math.abs(hsv1[0] - hsv2[0]);
+        if (hueDiff > 180) {
+            hueDiff = 360 - hueDiff;
+        }
+
+        return Math.sqrt(Math.pow(hueDiff / 180.0, 2) + Math.pow(hsv1[1] - hsv2[1], 2) + Math.pow(hsv1[2] - hsv2[2], 2));
+    }
+
+    private double calculateSimilarity(float[] inputHsv, List<float[]> samples) {
+        return samples.stream()
+                .mapToDouble(sample -> hsvDistance(inputHsv, sample))
+                .average()
+                .orElse(Double.MAX_VALUE);
+    }
+
+    private DetectedColor detectColor(NormalizedRGBA colors, double distance) {
+        if (distance > DISTANCE_THRESHOLD_MM) {
+            return DetectedColor.NONE;
+        }
+
+        float[] hsvValues = new float[3];
+        Color.colorToHSV(colors.toColor(), hsvValues);
+
+        double purpleSimilarity = calculateSimilarity(hsvValues, PURPLE_SAMPLES);
+        double greenSimilarity = calculateSimilarity(hsvValues, GREEN_SAMPLES);
+
+        double minSimilarity = Math.min(purpleSimilarity, greenSimilarity);
+
+        if (minSimilarity > COLOR_SIMILARITY_THRESHOLD) {
+            return DetectedColor.NONE;
+        }
+
+        if (purpleSimilarity < greenSimilarity) {
+            return DetectedColor.PURPLE;
+        } else {
+            return DetectedColor.GREEN;
+        }
+    }
+
+    private DetectedColor getStorageColor(int num) {
+        NormalizedColorSensor colorSensor;
+
+        switch (num) {
+            case 1:
+                colorSensor = colorSensor1;
+                break;
+            case 2:
+                colorSensor = colorSensor2;
+                break;
+            case 3:
+                colorSensor = colorSensor3;
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid sensor number: " + num);
+        }
+
+        NormalizedRGBA colors = colorSensor.getNormalizedColors();
+
+        double distance = 0;
+        if (colorSensor instanceof DistanceSensor) {
+            distance = ((DistanceSensor)colorSensor1).getDistance(DistanceUnit.MM);
+        }
+
+        return detectColor(colors, distance);
+    }
+
+    private void checkStorage() {
+        if (isStorageFull()) {
+            motorStorage.setPower(0);
+        } else {
+            motorStorage.setPower(1);
+        }
+    }
+
+    private boolean isStorageFull() {
+        for (int i = 1; i <= 3; i++) {
+            DetectedColor storageColor = getStorageColor(i);
+            if (storageColor == DetectedColor.NONE) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private int findStorageColor(DetectedColor color) {
+        for (int i = 1; i <= 3; i++) {
+            DetectedColor storageColor = getStorageColor(i);
+            if (storageColor == color) {
+                return i;
+            }
+        }
+        return 0;
     }
 }
