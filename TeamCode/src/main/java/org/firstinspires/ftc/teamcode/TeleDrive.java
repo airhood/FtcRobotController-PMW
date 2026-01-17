@@ -41,15 +41,12 @@ public class TeleDrive extends LinearOpMode {
     private DcMotor motorRight;
     private DcMotor motorStorage;
     private DcMotor motorShoot;
-    private Servo servoLoadBall1;
-    private Servo servoLoadBall2;
-    private Servo servoLoadBall3;
+    private Servo servoRotateBall;
+    private Servo servoLoadBall;
     private Servo servoYaw;
     private Servo servoPitch;
 
-    private NormalizedColorSensor colorSensor1;
-    private NormalizedColorSensor colorSensor2;
-    private NormalizedColorSensor colorSensor3;
+    private NormalizedColorSensor colorSensor;
 
     private Position cameraPosition = new Position(DistanceUnit.MM, 0, 0, 0, 0);
     private YawPitchRollAngles cameraOrientation = new YawPitchRollAngles(AngleUnit.DEGREES, 0, -90, 0, 0);
@@ -57,28 +54,28 @@ public class TeleDrive extends LinearOpMode {
     private AprilTagProcessor aprilTagProcessor;
     private VisionPortal visionPortal;
 
-    static final double COUNTS_PER_MOTOR_REV = 28;
-    static final double DRIVE_GEAR_REDUCTION = 19.2;
-    static final double WHEEL_DIAMETER_MM = 40;
-    static final double COUNTS_PER_MM = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_MM * Math.PI);
+    private static final double COUNTS_PER_MOTOR_REV = 28;
+    private static final double DRIVE_GEAR_REDUCTION = 19.2;
+    private static final double WHEEL_DIAMETER_MM = 40;
+    private static final double COUNTS_PER_MM = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_MM * Math.PI);
 
-    static final double DRIVE_SPEED_DEADZONE = 0.05;
-    static final double DRIVE_SPEED_EXPO = 0.3;
-    static final double DRIVE_SPEED_RC_RATE = 0.7;
-    static final double DRIVE_SPEED_SUPER_RATE = 0.0;
-    static final double DRIVE_SPEED_MAX_SENSITIVITY = 1.0;
+    private static final double DRIVE_SPEED_DEADZONE = 0.05;
+    private static final double DRIVE_SPEED_EXPO = 0.3;
+    private static final double DRIVE_SPEED_RC_RATE = 0.7;
+    private static final double DRIVE_SPEED_SUPER_RATE = 0.0;
+    private static final double DRIVE_SPEED_MAX_SENSITIVITY = 1.0;
 
-    static final double TURN_SPEED_DEADZONE = 0.05;
-    static final double TURN_SPEED_EXPO = 0.5;
-    static final double TURN_SPEED_RC_RATE = 0.25;
-    static final double TURN_SPEED_SUPER_RATE = 0.3;
-    static final double TURN_SPEED_MAX_SENSITIVITY = 0.7;
+    private static final double TURN_SPEED_DEADZONE = 0.05;
+    private static final double TURN_SPEED_EXPO = 0.5;
+    private static final double TURN_SPEED_RC_RATE = 0.25;
+    private static final double TURN_SPEED_SUPER_RATE = 0.3;
+    private static final double TURN_SPEED_MAX_SENSITIVITY = 0.7;
 
-    static final boolean WEB_CAM_MANUAL_EXPOSURE = true;
-    static final int WEB_CAM_EXPOSURE_MS = 6;
-    static final int WEB_CAM_GAIN = 250;
+    private static final boolean WEB_CAM_MANUAL_EXPOSURE = true;
+    private static final int WEB_CAM_EXPOSURE_MS = 6;
+    private static final int WEB_CAM_GAIN = 250;
 
-    static final float COLOR_SENSOR_GAIN = 0;
+    private static final float COLOR_SENSOR_GAIN = 0;
 
     private static final double DISTANCE_THRESHOLD_MM = 50.0;
     private static final double COLOR_SIMILARITY_THRESHOLD = 0.4;
@@ -95,6 +92,8 @@ public class TeleDrive extends LinearOpMode {
             new float[]{115, 0.75f, 0.65f}
     );
 
+    private static final double MOTOR_STORAGE_SPEED = 0.5;
+
     @Override
     public void runOpMode() {
         imu = hardwareMap.get(IMU.class, "imu");
@@ -102,14 +101,11 @@ public class TeleDrive extends LinearOpMode {
         motorRight = hardwareMap.get(DcMotor.class, "motor2");
         motorStorage = hardwareMap.get(DcMotor.class, "motor3");
         motorShoot = hardwareMap.get(DcMotor.class, "motor4");
-        servoLoadBall1 = hardwareMap.get(Servo.class, "servo1");
-        servoLoadBall2 = hardwareMap.get(Servo.class, "servo2");
-        servoLoadBall3 = hardwareMap.get(Servo.class, "servo3");
-        servoYaw = hardwareMap.get(Servo.class, "servo4");
-        servoPitch = hardwareMap.get(Servo.class, "servo5");
-        colorSensor1 = hardwareMap.get(NormalizedColorSensor.class, "color_sensor1");
-        colorSensor2 = hardwareMap.get(NormalizedColorSensor.class, "color_sensor2");
-        colorSensor3 = hardwareMap.get(NormalizedColorSensor.class, "color_sensor3");
+        servoRotateBall = hardwareMap.get(Servo.class, "servo1");
+        servoLoadBall = hardwareMap.get(Servo.class, "servo2");
+        servoYaw = hardwareMap.get(Servo.class, "servo3");
+        servoPitch = hardwareMap.get(Servo.class, "servo4");
+        colorSensor = hardwareMap.get(NormalizedColorSensor.class, "color_sensor");
 
         telemetry.addLine("[Init] hardwareMap initialized");
         telemetry.update();
@@ -126,23 +122,13 @@ public class TeleDrive extends LinearOpMode {
             telemetry.update();
         }
 
-        colorSensor1.setGain(COLOR_SENSOR_GAIN);
-        colorSensor2.setGain(COLOR_SENSOR_GAIN);
-        colorSensor3.setGain(COLOR_SENSOR_GAIN);
+        colorSensor.setGain(COLOR_SENSOR_GAIN);
 
         telemetry.addLine(String.format(Locale.KOREA, "ColorSensor gain set to %f", COLOR_SENSOR_GAIN));
 
-        if (colorSensor1 instanceof SwitchableLight) {
-            ((SwitchableLight)colorSensor1).enableLight(true);
-            telemetry.addLine("ColorSensor1 light enabled");
-        }
-        if (colorSensor2 instanceof SwitchableLight) {
-            ((SwitchableLight)colorSensor2).enableLight(true);
-            telemetry.addLine("ColorSensor2 light enabled");
-        }
-        if (colorSensor3 instanceof SwitchableLight) {
-            ((SwitchableLight)colorSensor3).enableLight(true);
-            telemetry.addLine("ColorSensor3 light enabled");
+        if (colorSensor instanceof SwitchableLight) {
+            ((SwitchableLight)colorSensor).enableLight(true);
+            telemetry.addLine("ColorSensor light enabled");
         }
         telemetry.update();
 
@@ -157,8 +143,6 @@ public class TeleDrive extends LinearOpMode {
         motorShoot.setDirection(DcMotorSimple.Direction.FORWARD);
 
         while (opModeIsActive()) {
-            checkStorage();
-
             telemetryAprilTag();
 
             moveWheel();
@@ -345,57 +329,26 @@ public class TeleDrive extends LinearOpMode {
     }
 
     private void telemetryColor() {
-        NormalizedRGBA colors1 = colorSensor1.getNormalizedColors();
-        NormalizedRGBA colors2 = colorSensor2.getNormalizedColors();
-        NormalizedRGBA colors3 = colorSensor3.getNormalizedColors();
+        NormalizedRGBA colors = colorSensor.getNormalizedColors();
 
-        float[] hsvValues1 = new float[3];
-        float[] hsvValues2 = new float[3];
-        float[] hsvValues3 = new float[3];
+        float[] hsvValues = new float[3];
+        Color.colorToHSV(colors.toColor(), hsvValues);
 
-        double distance1 = 0;
-        double distance2 = 0;
-        double distance3 = 0;
+        double distance = 0;
 
-        if (colorSensor1 instanceof DistanceSensor) {
-            distance1 = ((DistanceSensor)colorSensor1).getDistance(DistanceUnit.MM);
-        }
-        if (colorSensor2 instanceof DistanceSensor) {
-            distance2 = ((DistanceSensor)colorSensor2).getDistance(DistanceUnit.MM);
-        }
-        if (colorSensor3 instanceof DistanceSensor) {
-            distance3 = ((DistanceSensor)colorSensor3).getDistance(DistanceUnit.MM);
+        if (colorSensor instanceof DistanceSensor) {
+            distance = ((DistanceSensor)colorSensor).getDistance(DistanceUnit.MM);
         }
 
         telemetry.addLine("Color1")
-                .addData("Red", "%.3f", colors1.red)
-                .addData("Green", "%.3f", colors1.green)
-                .addData("Blue", "%.3f", colors1.blue)
-                .addData("Hue", "%.3f", hsvValues1[0])
-                .addData("Saturation", "%.3f", hsvValues1[1])
-                .addData("Value" ,"%.3f", hsvValues1[2])
-                .addData("Alpha", "%.3f", colors1.alpha)
-                .addData("Distance (mm)", "%.3f", distance1);
-
-        telemetry.addLine("Color2")
-                .addData("Red", "%.3f", colors2.red)
-                .addData("Green", "%.3f", colors2.green)
-                .addData("Blue", "%.3f", colors2.blue)
-                .addData("Hue", "%.3f", hsvValues2[0])
-                .addData("Saturation", "%.3f", hsvValues2[1])
-                .addData("Value" ,"%.3f", hsvValues2[2])
-                .addData("Alpha", "%.3f", colors2.alpha)
-                .addData("Distance (mm)", "%.3f", distance2);
-
-        telemetry.addLine("Color3")
-                .addData("Red", "%.3f", colors3.red)
-                .addData("Green", "%.3f", colors3.green)
-                .addData("Blue", "%.3f", colors3.blue)
-                .addData("Hue", "%.3f", hsvValues3[0])
-                .addData("Saturation", "%.3f", hsvValues3[1])
-                .addData("Value" ,"%.3f", hsvValues3[2])
-                .addData("Alpha", "%.3f", colors3.alpha)
-                .addData("Distance (mm)", "%.3f", distance3);
+                .addData("Red", "%.3f", colors.red)
+                .addData("Green", "%.3f", colors.green)
+                .addData("Blue", "%.3f", colors.blue)
+                .addData("Hue", "%.3f", hsvValues[0])
+                .addData("Saturation", "%.3f", hsvValues[1])
+                .addData("Value" ,"%.3f", hsvValues[2])
+                .addData("Alpha", "%.3f", colors.alpha)
+                .addData("Distance (mm)", "%.3f", distance);
     }
 
     private double hsvDistance(float[] hsv1, float[] hsv2) {
@@ -438,58 +391,14 @@ public class TeleDrive extends LinearOpMode {
         }
     }
 
-    private DetectedColor getStorageColor(int num) {
-        NormalizedColorSensor colorSensor;
-
-        switch (num) {
-            case 1:
-                colorSensor = colorSensor1;
-                break;
-            case 2:
-                colorSensor = colorSensor2;
-                break;
-            case 3:
-                colorSensor = colorSensor3;
-                break;
-            default:
-                throw new IllegalArgumentException("Invalid sensor number: " + num);
-        }
-
+    private DetectedColor getStorageColor() {
         NormalizedRGBA colors = colorSensor.getNormalizedColors();
 
         double distance = 0;
         if (colorSensor instanceof DistanceSensor) {
-            distance = ((DistanceSensor)colorSensor1).getDistance(DistanceUnit.MM);
+            distance = ((DistanceSensor)colorSensor).getDistance(DistanceUnit.MM);
         }
 
         return detectColor(colors, distance);
-    }
-
-    private void checkStorage() {
-        if (isStorageFull()) {
-            motorStorage.setPower(0);
-        } else {
-            motorStorage.setPower(1);
-        }
-    }
-
-    private boolean isStorageFull() {
-        for (int i = 1; i <= 3; i++) {
-            DetectedColor storageColor = getStorageColor(i);
-            if (storageColor == DetectedColor.NONE) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private int findStorageColor(DetectedColor color) {
-        for (int i = 1; i <= 3; i++) {
-            DetectedColor storageColor = getStorageColor(i);
-            if (storageColor == color) {
-                return i;
-            }
-        }
-        return 0;
     }
 }
