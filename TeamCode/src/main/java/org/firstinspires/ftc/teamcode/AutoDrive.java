@@ -2,9 +2,8 @@ package org.firstinspires.ftc.teamcode;
 
 import android.graphics.Color;
 
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
@@ -31,9 +30,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-@TeleOp(name = "Tele Drive")
-public class TeleDrive extends LinearOpMode {
-
+@Autonomous(name = "Auto Drive")
+public class AutoDrive extends LinearOpMode {
     private ElapsedTime runtime = new ElapsedTime();
 
     private IMU imu;
@@ -162,8 +160,6 @@ public class TeleDrive extends LinearOpMode {
         while (opModeIsActive()) {
             telemetryAprilTag();
 
-            moveWheel();
-
             telemetry.addData("Status", "Running");
             telemetry.update();
 
@@ -173,43 +169,38 @@ public class TeleDrive extends LinearOpMode {
         visionPortal.close();
     }
 
-    private void moveWheel() {
-        double leftX = processStickInput(gamepad1.left_stick_x, TURN_SPEED_DEADZONE, TURN_SPEED_EXPO, TURN_SPEED_RC_RATE, TURN_SPEED_SUPER_RATE, TURN_SPEED_MAX_SENSITIVITY);
-        double rightY = processStickInput(gamepad1.right_stick_y, DRIVE_SPEED_DEADZONE, DRIVE_SPEED_EXPO, DRIVE_SPEED_RC_RATE, DRIVE_SPEED_SUPER_RATE, DRIVE_SPEED_MAX_SENSITIVITY);
-        rightY *= -1;
+    private void encoderDrive(MotorAction left, MotorAction right, double timeout) {
+        if (opModeIsActive()) {
+            int newLeftTarget = motorLeft.getCurrentPosition() + (int)(left.target * COUNTS_PER_MM);
+            int newRightTarget = motorRight.getCurrentPosition() + (int)(right.target * COUNTS_PER_MM);
 
-        double left = rightY + leftX;
-        double right = rightY - leftX;
+            motorLeft.setTargetPosition(newLeftTarget);
+            motorRight.setTargetPosition(newRightTarget);
 
-        double maxMagnitude = Math.max(Math.abs(left), Math.abs(right));
+            motorLeft.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+            motorRight.setMode(DcMotor.RunMode.RUN_TO_POSITION);
 
-        if (maxMagnitude > 1.0) {
-            left /= maxMagnitude;
-            right /= maxMagnitude;
+            runtime.reset();
+
+            motorLeft.setPower(left.speed);
+            motorRight.setPower(right.speed);
+
+            while (opModeIsActive() &&
+                    (runtime.seconds() < timeout) &&
+                    (motorLeft.isBusy() && motorRight.isBusy())) {
+                telemetry.addData("Running to", " %7d | %7d",
+                        newLeftTarget, newRightTarget);
+                telemetry.addData("Currently at", " %7d | %7d",
+                        motorLeft.getCurrentPosition(), motorRight.getCurrentPosition());
+                telemetry.update();
+            }
+
+            motorLeft.setPower(0);
+            motorRight.setPower(0);
+
+            motorLeft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+            motorRight.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         }
-
-        motorLeft.setPower(left);
-        motorRight.setPower(right);
-    }
-
-    public static double processStickInput(double value, double deadzone, double expo,
-                                           double rcRate, double superRate, double maxSensitivity) {
-        if (Math.abs(value) < deadzone) {
-            return 0.0;
-        }
-
-        double sign = Math.signum(value);
-        double magnitude = Math.abs(value);
-
-        magnitude = (magnitude - deadzone) / (1.0 - deadzone);
-
-        double expoValue = expo * magnitude * magnitude + (1.0 - expo) * magnitude;
-
-        double effectiveRate = rcRate + superRate * magnitude * magnitude;
-
-        double output = sign * expoValue * effectiveRate;
-
-        return Math.max(-maxSensitivity, Math.min(maxSensitivity, output));
     }
 
     private void initAprilTag() {

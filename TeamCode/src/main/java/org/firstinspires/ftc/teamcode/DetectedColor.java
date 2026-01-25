@@ -3,5 +3,8 @@ package org.firstinspires.ftc.teamcode;
 public enum DetectedColor {
     PURPLE,
     GREEN,
-    NONE
+    NONE,
+    TAG1,
+    TAG2,
+    TAG3
 }
