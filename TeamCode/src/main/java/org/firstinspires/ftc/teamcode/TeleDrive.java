@@ -2,8 +2,10 @@ package org.firstinspires.ftc.teamcode;
 
 import android.graphics.Color;
 
+import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
@@ -34,14 +36,16 @@ import java.util.concurrent.TimeUnit;
 @TeleOp(name = "Tele Drive")
 public class TeleDrive extends LinearOpMode {
 
-    private ElapsedTime runtime = new ElapsedTime();
+    private boolean ESR = false;
+
+    private ElapsedTime runtime = new ElapsedTime(ElapsedTime.Resolution.MILLISECONDS);
 
     private IMU imu;
     private DcMotor motorLeft;
     private DcMotor motorRight;
     private DcMotor motorStorage;
     private DcMotor motorShoot;
-    private Servo servoRotateBall;
+    private CRServo servoRotateBall;
     private Servo servoLoadBall;
     private Servo servoYaw;
     private Servo servoPitch;
@@ -54,6 +58,11 @@ public class TeleDrive extends LinearOpMode {
 
     private AprilTagProcessor aprilTagProcessor;
     private VisionPortal visionPortal;
+
+    private DetectedColor ballRotatorTarget = DetectedColor.NONE;
+
+    private BallLoadState ballLoadState = BallLoadState.IDLE;
+    private ElapsedTime ballLoadTimer = new ElapsedTime(ElapsedTime.Resolution.MILLISECONDS);
 
     private static final double COUNTS_PER_MOTOR_REV = 28;
     private static final double DRIVE_GEAR_REDUCTION = 19.2;
@@ -103,16 +112,46 @@ public class TeleDrive extends LinearOpMode {
     private static final List<float[]> BALL_ROTATOR_TAG_3_SAMPLES = Arrays.asList(
     );
 
-    private static final double MOTOR_STORAGE_SPEED = 0.5;
+    private static final double SERVO_ROTATE_BALL_SPEED = 0.5;
+
+    private static final double SERVO_LOAD_BALL_IDLE_POSITION = 0.0;
+    private static final double SERVO_LOAD_BALL_ACTIVE_POSITION = 0.5;
+    private static final double LOAD_BALL_SERVO_LIMIT = 0.02;
+    private static final long LOAD_BALL_LOADED_WAIT_MS = 700;
 
     @Override
     public void runOpMode() {
+        initialize();
+
+        waitForStart();
+
+        motorLeft.setDirection(DcMotorSimple.Direction.REVERSE);
+        motorRight.setDirection(DcMotorSimple.Direction.FORWARD);
+        motorStorage.setDirection(DcMotorSimple.Direction.FORWARD);
+        motorShoot.setDirection(DcMotorSimple.Direction.FORWARD);
+
+        while (opModeIsActive()) {
+            tick();
+
+            if (ESR) {
+                telemetry.addData("ESR", "Triggered");
+            }
+            telemetry.addData("Status", "Running");
+            telemetry.update();
+
+            sleep(20);
+        }
+
+        visionPortal.close();
+    }
+
+    private void initialize() {
         imu = hardwareMap.get(IMU.class, "imu");
         motorLeft = hardwareMap.get(DcMotor.class, "motor1");
         motorRight = hardwareMap.get(DcMotor.class, "motor2");
         motorStorage = hardwareMap.get(DcMotor.class, "motor3");
         motorShoot = hardwareMap.get(DcMotor.class, "motor4");
-        servoRotateBall = hardwareMap.get(Servo.class, "servo1");
+        servoRotateBall = hardwareMap.get(CRServo.class, "servo1");
         servoLoadBall = hardwareMap.get(Servo.class, "servo2");
         servoYaw = hardwareMap.get(Servo.class, "servo3");
         servoPitch = hardwareMap.get(Servo.class, "servo4");
@@ -121,6 +160,12 @@ public class TeleDrive extends LinearOpMode {
 
         telemetry.addLine("[Init] hardwareMap initialized");
         telemetry.update();
+
+        IMU.Parameters imuParameters = new IMU.Parameters(new RevHubOrientationOnRobot(
+                RevHubOrientationOnRobot.LogoFacingDirection.LEFT,
+                RevHubOrientationOnRobot.UsbFacingDirection.UP
+        ));
+        imu.initialize(imuParameters);
 
         initAprilTag();
 
@@ -151,26 +196,50 @@ public class TeleDrive extends LinearOpMode {
 
         telemetry.addData("Status", "Initialized");
         telemetry.update();
+    }
 
-        waitForStart();
+    private void tick() {
+        controllerSpecialKey();
 
-        motorLeft.setDirection(DcMotorSimple.Direction.REVERSE);
-        motorRight.setDirection(DcMotorSimple.Direction.FORWARD);
-        motorStorage.setDirection(DcMotorSimple.Direction.FORWARD);
-        motorShoot.setDirection(DcMotorSimple.Direction.FORWARD);
+        // emergency break
+        if (!gamepad1.left_bumper) {
+            boolean isBallRotationManualControl = ballRotationManualControl();
 
-        while (opModeIsActive()) {
             telemetryAprilTag();
 
             moveWheel();
 
-            telemetry.addData("Status", "Running");
-            telemetry.update();
+            if (!isBallRotationManualControl) {
+                ballRotatorTick();
+            }
 
-            sleep(20);
+            loadBallTick();
+        }
+    }
+
+    private void controllerSpecialKey() {
+        if (gamepad1.startWasPressed()) {
+            telemetry.addData("Status", "Emergency system reboot: re-initializing");
+            telemetry.update();
+            initialize();
+            telemetry.addData("Status", "Emergency system reboot: initialize success");
+            telemetry.update();
         }
 
-        visionPortal.close();
+        if (gamepad1.backWasPressed()) {
+            imu.resetYaw();
+        }
+    }
+
+    private boolean ballRotationManualControl() {
+        if (!gamepad1.x && gamepad1.b) { // ball rotation default direction
+            servoRotateBall.setPower(SERVO_ROTATE_BALL_SPEED);
+            return true;
+        } else if (gamepad1.x && !gamepad1.b) { // ball rotation opposite direction
+            servoRotateBall.setPower(-SERVO_ROTATE_BALL_SPEED);
+            return true;
+        }
+        return false;
     }
 
     private void moveWheel() {
@@ -427,5 +496,45 @@ public class TeleDrive extends LinearOpMode {
         }
 
         return detectBallColor(colors, distance);
+    }
+
+    private DetectedColor getBallRotatorTagColor() {
+        NormalizedRGBA colors = colorSensorBallRotation.getNormalizedColors();
+
+        double distance = 0;
+        if (colorSensorBallRotation instanceof DistanceSensor) {
+            distance = ((DistanceSensor)colorSensorBallRotation).getDistance(DistanceUnit.MM);
+        }
+
+        return detectBallRotatorTagColor(colors, distance);
+    }
+
+    private void ballRotatorTick() {
+        DetectedColor detectedColor = getBallRotatorTagColor();
+        if (detectedColor != ballRotatorTarget) {
+            servoRotateBall.setPower(SERVO_ROTATE_BALL_SPEED);
+        } else {
+            servoRotateBall.setPower(0);
+        }
+    }
+
+    private void loadBallTick() {
+        if (ballLoadState == BallLoadState.LOADED) {
+            long time = ballLoadTimer.time(TimeUnit.MILLISECONDS);
+            if (time >= LOAD_BALL_LOADED_WAIT_MS) {
+                ballLoadState = BallLoadState.RETURNING;
+                servoLoadBall.setPosition(SERVO_LOAD_BALL_IDLE_POSITION);
+            }
+        } else if ((ballLoadState == BallLoadState.LOADING) && (Math.abs(servoLoadBall.getPosition() - SERVO_LOAD_BALL_ACTIVE_POSITION) <= LOAD_BALL_SERVO_LIMIT)) {
+            ballLoadState = BallLoadState.LOADED;
+            ballLoadTimer.reset();
+        } else if ((ballLoadState == BallLoadState.RETURNING) && (Math.abs(servoLoadBall.getPosition() - SERVO_LOAD_BALL_IDLE_POSITION) <= LOAD_BALL_SERVO_LIMIT)) {
+            ballLoadState = BallLoadState.IDLE;
+        }
+    }
+
+    private void loadBall() {
+        ballLoadState = BallLoadState.LOADING;
+        servoLoadBall.setPosition(SERVO_LOAD_BALL_ACTIVE_POSITION);
     }
 }

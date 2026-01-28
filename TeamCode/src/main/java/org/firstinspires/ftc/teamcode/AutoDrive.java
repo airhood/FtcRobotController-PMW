@@ -101,7 +101,7 @@ public class AutoDrive extends LinearOpMode {
     private static final List<float[]> BALL_ROTATOR_TAG_3_SAMPLES = Arrays.asList(
     );
 
-    private static final double MOTOR_STORAGE_SPEED = 0.5;
+    private static final double SERVO_ROTATE_BALL_SPEED = 0.5;
 
     @Override
     public void runOpMode() {
