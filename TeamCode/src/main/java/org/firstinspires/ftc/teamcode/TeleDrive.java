@@ -84,6 +84,10 @@ public class TeleDrive extends LinearOpMode {
     private static final boolean WEB_CAM_MANUAL_EXPOSURE = true;
     private static final int WEB_CAM_EXPOSURE_MS = 6;
     private static final int WEB_CAM_GAIN = 250;
+    private static double CAM_Fx = 1385.31;
+    private static double CAM_Fy = 1385.31;
+    private static double CAM_Cx = 973.922;
+    private static double CAM_Cy = 554.487;
 
     private static final float COLOR_SENSOR_GAIN = 0;
 
@@ -166,6 +170,8 @@ public class TeleDrive extends LinearOpMode {
                 RevHubOrientationOnRobot.UsbFacingDirection.UP
         ));
         imu.initialize(imuParameters);
+
+        telemetry.addLine("[Init] IMU initialized");
 
         initAprilTag();
 
@@ -284,6 +290,7 @@ public class TeleDrive extends LinearOpMode {
     private void initAprilTag() {
         aprilTagProcessor = new AprilTagProcessor.Builder()
                 .setCameraPose(cameraPosition, cameraOrientation)
+                .setLensIntrinsics(CAM_Fx, CAM_Fy, CAM_Cx, CAM_Cy)
                 .build();
 
         VisionPortal.Builder builder = new VisionPortal.Builder();
