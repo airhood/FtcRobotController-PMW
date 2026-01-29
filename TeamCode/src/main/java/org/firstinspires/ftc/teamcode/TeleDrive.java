@@ -16,6 +16,7 @@ import com.qualcomm.robotcore.hardware.NormalizedRGBA;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.hardware.SwitchableLight;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.controls.ExposureControl;
@@ -36,6 +37,8 @@ import java.util.concurrent.TimeUnit;
 @TeleOp(name = "Tele Drive")
 public class TeleDrive extends LinearOpMode {
 
+    private Alliance alliance;
+
     private boolean ESR = false;
 
     private ElapsedTime runtime = new ElapsedTime(ElapsedTime.Resolution.MILLISECONDS);
@@ -47,7 +50,7 @@ public class TeleDrive extends LinearOpMode {
     private DcMotor motorShoot;
     private CRServo servoRotateBall;
     private Servo servoLoadBall;
-    private Servo servoYaw;
+    private CRServo servoYaw;
     private Servo servoPitch;
 
     private NormalizedColorSensor colorSensorBall;
@@ -63,6 +66,16 @@ public class TeleDrive extends LinearOpMode {
 
     private BallLoadState ballLoadState = BallLoadState.IDLE;
     private ElapsedTime ballLoadTimer = new ElapsedTime(ElapsedTime.Resolution.MILLISECONDS);
+
+    private double motorShootPower = 0.7;
+
+    private double kP = 0.02;
+    private double kD = 0.005;
+    private double deadband = 1.0;
+    private double lastError = 0;
+    private double lastTime = 0;
+    private double maxPower = 0.5;
+    private double minPower = -0.5;
 
     private static final double COUNTS_PER_MOTOR_REV = 28;
     private static final double DRIVE_GEAR_REDUCTION = 19.2;
@@ -157,7 +170,7 @@ public class TeleDrive extends LinearOpMode {
         motorShoot = hardwareMap.get(DcMotor.class, "motor4");
         servoRotateBall = hardwareMap.get(CRServo.class, "servo1");
         servoLoadBall = hardwareMap.get(Servo.class, "servo2");
-        servoYaw = hardwareMap.get(Servo.class, "servo3");
+        servoYaw = hardwareMap.get(CRServo.class, "servo3");
         servoPitch = hardwareMap.get(Servo.class, "servo4");
         colorSensorBall = hardwareMap.get(NormalizedColorSensor.class, "color_sensor1");
         colorSensorBallRotation = hardwareMap.get(NormalizedColorSensor.class, "color_sensor2");
@@ -205,7 +218,7 @@ public class TeleDrive extends LinearOpMode {
     }
 
     private void tick() {
-        controllerSpecialKey();
+        controllerKey();
 
         // emergency break
         if (!gamepad1.left_bumper) {
@@ -220,10 +233,12 @@ public class TeleDrive extends LinearOpMode {
             }
 
             loadBallTick();
+            ballShootAlignmentTick();
+            shootTick();
         }
     }
 
-    private void controllerSpecialKey() {
+    private void controllerKey() {
         if (gamepad1.startWasPressed()) {
             telemetry.addData("Status", "Emergency system reboot: re-initializing");
             telemetry.update();
@@ -294,7 +309,7 @@ public class TeleDrive extends LinearOpMode {
                 .build();
 
         VisionPortal.Builder builder = new VisionPortal.Builder();
-        builder.setCamera(hardwareMap.get(WebcamName.class, "Webcam"));
+        builder.setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"));
         builder.addProcessor(aprilTagProcessor);
 
         visionPortal = builder.build();
@@ -543,5 +558,56 @@ public class TeleDrive extends LinearOpMode {
     private void loadBall() {
         ballLoadState = BallLoadState.LOADING;
         servoLoadBall.setPosition(SERVO_LOAD_BALL_ACTIVE_POSITION);
+    }
+
+    private void shootTick() {
+        motorShoot.setPower(motorShootPower);
+    }
+
+    private double calculateBallShootPower() {
+        return 0.0;
+    }
+
+    private void ballShootAlignmentTick() {
+        List<AprilTagDetection> detections = aprilTagProcessor.getDetections();
+
+        AprilTagDetection bestTag = null;
+        for (AprilTagDetection detection : detections) {
+            if (detection.metadata != null) {
+                if (!detection.metadata.name.contains("Obelisk")) {
+                    if ((detection.id == AprilTagID.BLUE_GOAL && alliance == Alliance.BLUE)
+                        || (detection.id == AprilTagID.READ_GOAL && alliance == Alliance.RED)) {
+                        bestTag = detection;
+                    }
+                }
+            }
+        }
+
+        if (bestTag != null) {
+            double bearing = bestTag.ftcPose.bearing;
+
+            if (Math.abs(bearing) < deadband) {
+                servoYaw.setPower(0);
+                lastError = 0;
+                lastTime = getRuntime();
+                return;
+            }
+
+            double now = getRuntime();
+            double dt = now - lastTime;
+            if (dt <= 0) dt = 0.01;
+
+            double derivative = (bearing - lastError) / dt;
+            double power = kP * bearing + kD * derivative;
+
+            power = Range.clip(power, minPower, maxPower);
+
+            servoYaw.setPower(-power);
+
+            lastError = bearing;
+            lastTime = now;
+        } else {
+            servoYaw.setPower(0);
+        }
     }
 }
