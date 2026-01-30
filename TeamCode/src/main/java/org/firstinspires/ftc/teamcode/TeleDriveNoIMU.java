@@ -3,9 +3,10 @@ package org.firstinspires.ftc.teamcode;
 import android.graphics.Color;
 
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
-import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.CRServo;
+import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
@@ -33,8 +34,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-@Autonomous(name = "Auto Drive")
-public class AutoDrive extends LinearOpMode {
+@TeleOp(name = "Tele Drive")
+public class TeleDriveNoIMU extends LinearOpMode {
+
     private Alliance alliance;
 
     private boolean ESR = false;
@@ -52,7 +54,6 @@ public class AutoDrive extends LinearOpMode {
     private Servo servoPitch;
 
     private NormalizedColorSensor colorSensorBall;
-    private NormalizedColorSensor colorSensorBallRotation;
 
     private Position cameraPosition = new Position(DistanceUnit.MM, 0, 0, 0, 0);
     private YawPitchRollAngles cameraOrientation = new YawPitchRollAngles(AngleUnit.DEGREES, 0, -90, 0, 0);
@@ -127,10 +128,11 @@ public class AutoDrive extends LinearOpMode {
     private static final List<float[]> BALL_ROTATOR_TAG_3_SAMPLES = Arrays.asList(
     );
 
-    private static final double SERVO_ROTATE_BALL_SPEED = 0.5;
+    //private static final double SERVO_ROTATE_BALL_SPEED = -0.5;
+    private static final double SERVO_ROTATE_BALL_SPEED = 0;
 
-    private static final double SERVO_LOAD_BALL_IDLE_POSITION = 0.0;
-    private static final double SERVO_LOAD_BALL_ACTIVE_POSITION = 0.5;
+    private static final double SERVO_LOAD_BALL_IDLE_POSITION = 0.9;
+    private static final double SERVO_LOAD_BALL_ACTIVE_POSITION = 0.35;
     private static final double LOAD_BALL_SERVO_LIMIT = 0.02;
     private static final long LOAD_BALL_LOADED_WAIT_MS = 700;
 
@@ -138,7 +140,8 @@ public class AutoDrive extends LinearOpMode {
     private static final double SERVO_PITCH_MAX = 0.3;
     private static final double SERVO_PITCH_MIN = 0.07;
 
-    private static final double MOTOR_STORAGE_SPEED = 1.0;
+    //private static final double MOTOR_STORAGE_SPEED = 0.42;
+    private static final double MOTOR_STORAGE_SPEED = 0.42;
 
     @Override
     public void runOpMode() {
@@ -175,7 +178,6 @@ public class AutoDrive extends LinearOpMode {
     }
 
     private void initialize() {
-        imu = hardwareMap.get(IMU.class, "imu");
         motorLeft = hardwareMap.get(DcMotor.class, "motor1");
         motorRight = hardwareMap.get(DcMotor.class, "motor2");
         motorStorage = hardwareMap.get(DcMotor.class, "motor3");
@@ -185,16 +187,9 @@ public class AutoDrive extends LinearOpMode {
         servoYaw = hardwareMap.get(CRServo.class, "servo3");
         servoPitch = hardwareMap.get(Servo.class, "servo4");
         colorSensorBall = hardwareMap.get(NormalizedColorSensor.class, "color_sensor1");
-        colorSensorBallRotation = hardwareMap.get(NormalizedColorSensor.class, "color_sensor2");
 
         telemetry.addLine("[Init] hardwareMap initialized");
         telemetry.update();
-
-        IMU.Parameters imuParameters = new IMU.Parameters(new RevHubOrientationOnRobot(
-                RevHubOrientationOnRobot.LogoFacingDirection.LEFT,
-                RevHubOrientationOnRobot.UsbFacingDirection.UP
-        ));
-        imu.initialize(imuParameters);
 
         telemetry.addLine("[Init] IMU initialized");
 
@@ -211,16 +206,11 @@ public class AutoDrive extends LinearOpMode {
         }
 
         colorSensorBall.setGain(COLOR_SENSOR_GAIN);
-        colorSensorBallRotation.setGain(COLOR_SENSOR_GAIN);
 
         telemetry.addLine(String.format(Locale.KOREA, "ColorSensor gain set to %f", COLOR_SENSOR_GAIN));
 
         if (colorSensorBall instanceof SwitchableLight) {
             ((SwitchableLight)colorSensorBall).enableLight(true);
-            telemetry.addLine("ColorSensor light enabled");
-        }
-        if (colorSensorBallRotation instanceof SwitchableLight) {
-            ((SwitchableLight)colorSensorBallRotation).enableLight(true);
             telemetry.addLine("ColorSensor light enabled");
         }
         telemetry.update();
@@ -230,14 +220,19 @@ public class AutoDrive extends LinearOpMode {
     }
 
     private void tick() {
+        controllerKey();
 
         // emergency break
         if (!gamepad1.left_bumper) {
+            boolean isBallRotationManualControl = ballRotationManualControl();
+
             telemetryAprilTag();
 
-            //moveWheel();
+            moveWheel();
 
-            ballRotatorTick();
+            if (!isBallRotationManualControl) {
+                ballRotatorTick();
+            }
 
             loadBallTick();
             ballShootAlignmentTick();
@@ -245,47 +240,99 @@ public class AutoDrive extends LinearOpMode {
         }
     }
 
-    private void encoderDrive(MotorAction left, MotorAction right, double timeout) {
-        if (opModeIsActive()) {
-            int newLeftTarget = motorLeft.getCurrentPosition() + (int)(left.target * COUNTS_PER_MM);
-            int newRightTarget = motorRight.getCurrentPosition() + (int)(right.target * COUNTS_PER_MM);
-
-            motorLeft.setTargetPosition(newLeftTarget);
-            motorRight.setTargetPosition(newRightTarget);
-
-            motorLeft.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-            motorRight.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-
-            runtime.reset();
-
-            motorLeft.setPower(left.speed);
-            motorRight.setPower(right.speed);
-
-            while (opModeIsActive() &&
-                    (runtime.seconds() < timeout) &&
-                    (motorLeft.isBusy() && motorRight.isBusy())) {
-                telemetry.addData("Running to", " %7d | %7d",
-                        newLeftTarget, newRightTarget);
-                telemetry.addData("Currently at", " %7d | %7d",
-                        motorLeft.getCurrentPosition(), motorRight.getCurrentPosition());
-                telemetry.update();
-            }
-
-            motorLeft.setPower(0);
-            motorRight.setPower(0);
-
-            motorLeft.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            motorRight.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+    private void controllerKey() {
+        if (gamepad1.startWasPressed()) {
+            telemetry.addData("Status", "Emergency system reboot: re-initializing");
+            telemetry.update();
+            initialize();
+            telemetry.addData("Status", "Emergency system reboot: initialize success");
+            telemetry.update();
         }
+
+        if (gamepad1.backWasPressed()) {
+            imu.resetYaw();
+        }
+
+        if (gamepad1.rightBumperWasPressed()) {
+            shootBall();
+        }
+
+        if (gamepad1.y) {
+            double nextPos = servoPitch.getPosition() + SERVO_PITCH_SPEED;
+            if (nextPos > SERVO_PITCH_MAX) nextPos = SERVO_PITCH_MAX;
+            servoPitch.setPosition(nextPos);
+        }
+        if (gamepad1.a) {
+            double nextPos = servoPitch.getPosition() - SERVO_PITCH_SPEED;
+            if (nextPos < SERVO_PITCH_MIN) nextPos = SERVO_PITCH_MIN;
+            servoPitch.setPosition(nextPos);
+        }
+
+        if (gamepad1.dpad_down) {
+            motorShoot.setPower(0);
+        } else {
+            motorShoot.setPower(MOTOR_STORAGE_SPEED);
+        }
+    }
+
+    private boolean ballRotationManualControl() {
+        if (!gamepad1.x && gamepad1.b) { // ball rotation default direction
+            servoRotateBall.setPower(SERVO_ROTATE_BALL_SPEED);
+            return true;
+        } else if (gamepad1.x && !gamepad1.b) { // ball rotation opposite direction
+            servoRotateBall.setPower(-SERVO_ROTATE_BALL_SPEED);
+            return true;
+        }
+        return false;
+    }
+
+    private void moveWheel() {
+        double leftX = processStickInput(gamepad1.left_stick_x, TURN_SPEED_DEADZONE, TURN_SPEED_EXPO, TURN_SPEED_RC_RATE, TURN_SPEED_SUPER_RATE, TURN_SPEED_MAX_SENSITIVITY);
+        double rightY = processStickInput(gamepad1.right_stick_y, DRIVE_SPEED_DEADZONE, DRIVE_SPEED_EXPO, DRIVE_SPEED_RC_RATE, DRIVE_SPEED_SUPER_RATE, DRIVE_SPEED_MAX_SENSITIVITY);
+        rightY *= -1;
+
+        double left = rightY + leftX;
+        double right = rightY - leftX;
+
+        double maxMagnitude = Math.max(Math.abs(left), Math.abs(right));
+
+        if (maxMagnitude > 1.0) {
+            left /= maxMagnitude;
+            right /= maxMagnitude;
+        }
+
+        motorLeft.setPower(left);
+        motorRight.setPower(right);
+    }
+
+    public static double processStickInput(double value, double deadzone, double expo,
+                                           double rcRate, double superRate, double maxSensitivity) {
+        if (Math.abs(value) < deadzone) {
+            return 0.0;
+        }
+
+        double sign = Math.signum(value);
+        double magnitude = Math.abs(value);
+
+        magnitude = (magnitude - deadzone) / (1.0 - deadzone);
+
+        double expoValue = expo * magnitude * magnitude + (1.0 - expo) * magnitude;
+
+        double effectiveRate = rcRate + superRate * magnitude * magnitude;
+
+        double output = sign * expoValue * effectiveRate;
+
+        return Math.max(-maxSensitivity, Math.min(maxSensitivity, output));
     }
 
     private void initAprilTag() {
         aprilTagProcessor = new AprilTagProcessor.Builder()
                 .setCameraPose(cameraPosition, cameraOrientation)
+                .setLensIntrinsics(CAM_Fx, CAM_Fy, CAM_Cx, CAM_Cy)
                 .build();
 
         VisionPortal.Builder builder = new VisionPortal.Builder();
-        builder.setCamera(hardwareMap.get(WebcamName.class, "Webcam"));
+        builder.setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"));
         builder.addProcessor(aprilTagProcessor);
 
         visionPortal = builder.build();
@@ -378,45 +425,6 @@ public class AutoDrive extends LinearOpMode {
         }
     }
 
-    private void telemetryColor() {
-        NormalizedRGBA colorsBall = colorSensorBall.getNormalizedColors();
-        NormalizedRGBA colorsBallRotation = colorSensorBallRotation.getNormalizedColors();
-
-        float[] hsvValuesBall = new float[3];
-        float[] hsvValuesBallRotation = new float[3];
-        Color.colorToHSV(colorsBall.toColor(), hsvValuesBall);
-        Color.colorToHSV(colorsBallRotation.toColor(), hsvValuesBallRotation);
-
-        double distanceBall = 0;
-        double distanceBallRotation = 0;
-
-        if (colorSensorBall instanceof DistanceSensor) {
-            distanceBall = ((DistanceSensor)colorSensorBall).getDistance(DistanceUnit.MM);
-        }
-        if (colorSensorBallRotation instanceof DistanceSensor) {
-            distanceBallRotation = ((DistanceSensor)colorSensorBallRotation).getDistance(DistanceUnit.MM);
-        }
-
-        telemetry.addLine("Color Ball")
-                .addData("Red", "%.3f", colorsBall.red)
-                .addData("Green", "%.3f", colorsBall.green)
-                .addData("Blue", "%.3f", colorsBall.blue)
-                .addData("Hue", "%.3f", hsvValuesBall[0])
-                .addData("Saturation", "%.3f", hsvValuesBall[1])
-                .addData("Value" ,"%.3f", hsvValuesBall[2])
-                .addData("Alpha", "%.3f", colorsBall.alpha)
-                .addData("Distance (mm)", "%.3f", distanceBall);
-
-        telemetry.addLine("Color Ball Rotation")
-                .addData("Red", "%.3f", colorsBallRotation.red)
-                .addData("Green", "%.3f", colorsBallRotation.green)
-                .addData("Blue", "%.3f", colorsBallRotation.blue)
-                .addData("Hue", "%.3f", hsvValuesBallRotation[0])
-                .addData("Saturation", "%.3f", hsvValuesBallRotation[1])
-                .addData("Value" ,"%.3f", hsvValuesBallRotation[2])
-                .addData("Alpha", "%.3f", colorsBallRotation.alpha)
-                .addData("Distance (mm)", "%.3f", distanceBallRotation);
-    }
 
     private double hsvDistance(float[] hsv1, float[] hsv2) {
         float hueDiff = Math.abs(hsv1[0] - hsv2[0]);
@@ -497,14 +505,15 @@ public class AutoDrive extends LinearOpMode {
     }
 
     private DetectedColor getBallRotatorTagColor() {
-        NormalizedRGBA colors = colorSensorBallRotation.getNormalizedColors();
+        //NormalizedRGBA colors = colorSensorBallRotation.getNormalizedColors();
 
-        double distance = 0;
-        if (colorSensorBallRotation instanceof DistanceSensor) {
-            distance = ((DistanceSensor)colorSensorBallRotation).getDistance(DistanceUnit.MM);
-        }
+        //double distance = 0;
+        //if (colorSensorBallRotation instanceof DistanceSensor) {
+        //    distance = ((DistanceSensor)colorSensorBallRotation).getDistance(DistanceUnit.MM);
+        //}
 
-        return detectBallRotatorTagColor(colors, distance);
+        //return detectBallRotatorTagColor(colors, distance);
+        return DetectedColor.TAG3; // 임시
     }
 
     private void ballRotatorTick() {

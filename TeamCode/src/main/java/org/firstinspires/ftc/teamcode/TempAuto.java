@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode;
 
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -27,8 +28,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-@TeleOp(name = "PMW Test")
-public class PMWTest extends LinearOpMode {
+@Autonomous(name = "Temp Auto")
+public class TempAuto extends LinearOpMode {
 
     private ElapsedTime runtime = new ElapsedTime();
 
@@ -58,7 +59,7 @@ public class PMWTest extends LinearOpMode {
     static final double WHEEL_DIAMETER_MM = 40;
     static final double COUNTS_PER_MM = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_MM * Math.PI);
 
-    static final double DRIVE_SPEED_DEADZONE = 0.10;
+    static final double DRIVE_SPEED_DEADZONE = 0.05;
     static final double DRIVE_SPEED_EXPO = 0.3;
     static final double DRIVE_SPEED_RC_RATE = 0.7;
     static final double DRIVE_SPEED_SUPER_RATE = 0.0;
@@ -66,9 +67,9 @@ public class PMWTest extends LinearOpMode {
 
     static final double TURN_SPEED_DEADZONE = 0.05;
     static final double TURN_SPEED_EXPO = 0.5;
-    static final double TURN_SPEED_RC_RATE = 0.20;
-    static final double TURN_SPEED_SUPER_RATE = 0.2;
-    static final double TURN_SPEED_MAX_SENSITIVITY = 0.5;
+    static final double TURN_SPEED_RC_RATE = 0.25;
+    static final double TURN_SPEED_SUPER_RATE = 0.3;
+    static final double TURN_SPEED_MAX_SENSITIVITY = 0.7;
 
     static final boolean WEB_CAM_MANUAL_EXPOSURE = true;
     static final int WEB_CAM_EXPOSURE_MS = 6;
@@ -95,38 +96,15 @@ public class PMWTest extends LinearOpMode {
         motorLeft.setDirection(DcMotorSimple.Direction.REVERSE);
         motorRight.setDirection(DcMotorSimple.Direction.FORWARD);
 
+        encoderDrive(new MotorAction(0.7, 500), new MotorAction(0.35, 250), 60);
+
         while (opModeIsActive()) {
-            moveWheel();
 
             telemetry.addData("Status", "Running");
             telemetry.update();
 
             sleep(20);
         }
-    }
-
-    private void moveWheel() {
-        double leftX = processStickInput(gamepad1.left_stick_x, TURN_SPEED_DEADZONE, TURN_SPEED_EXPO, TURN_SPEED_RC_RATE, TURN_SPEED_SUPER_RATE, TURN_SPEED_MAX_SENSITIVITY);
-        double rightY = processStickInput(gamepad1.right_stick_y, DRIVE_SPEED_DEADZONE, DRIVE_SPEED_EXPO, DRIVE_SPEED_RC_RATE, DRIVE_SPEED_SUPER_RATE, DRIVE_SPEED_MAX_SENSITIVITY);
-        rightY *= -1;
-
-        double left = rightY + leftX;
-        double right = rightY - leftX;
-
-        telemetry.addData("leftX", "%.3f", leftX);
-        telemetry.addData("rightY", "%.3f", rightY);
-        telemetry.addData("left", "%.3f", left);
-        telemetry.addData("right", "%.3f", right);
-
-        double maxMagnitude = Math.max(Math.abs(left), Math.abs(right));
-
-        if (maxMagnitude > 1.0) {
-            left /= maxMagnitude;
-            right /= maxMagnitude;
-        }
-
-        motorLeft.setPower(left);
-        motorRight.setPower(right);
     }
 
     private void encoderDrive(MotorAction left, MotorAction right, double timeout) {

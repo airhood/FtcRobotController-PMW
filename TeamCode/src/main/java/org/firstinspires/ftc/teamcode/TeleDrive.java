@@ -105,7 +105,7 @@ public class TeleDrive extends LinearOpMode {
     private static final float COLOR_SENSOR_GAIN = 0;
 
     // TODO: change to actual value
-    private static final double BALL_DISTANCE_THRESHOLD_MM = 50.0;
+    private static final double BALL_DISTANCE_THRESHOLD_MM = 30.0;
     private static final double BALL_COLOR_DISTANCE_THRESHOLD = 0.4;
     private static final List<float[]> BALL_PURPLE_SAMPLES = Arrays.asList(
             new float[]{290, 0.7f, 0.5f},
@@ -129,16 +129,28 @@ public class TeleDrive extends LinearOpMode {
     private static final List<float[]> BALL_ROTATOR_TAG_3_SAMPLES = Arrays.asList(
     );
 
-    private static final double SERVO_ROTATE_BALL_SPEED = 0.5;
+    private static final double SERVO_ROTATE_BALL_SPEED = -0.5;
 
     private static final double SERVO_LOAD_BALL_IDLE_POSITION = 0.0;
     private static final double SERVO_LOAD_BALL_ACTIVE_POSITION = 0.5;
     private static final double LOAD_BALL_SERVO_LIMIT = 0.02;
     private static final long LOAD_BALL_LOADED_WAIT_MS = 700;
 
+    private static final double SERVO_PITCH_SPEED = 0.005;
+    private static final double SERVO_PITCH_MAX = 0.3;
+    private static final double SERVO_PITCH_MIN = 0.07;
+
+    private static final double MOTOR_STORAGE_SPEED = 0.4;
+
     @Override
     public void runOpMode() {
         initialize();
+
+        while (!isStarted() && !isStopRequested()) {
+            if (gamepad1.x && !gamepad1.b) alliance = Alliance.BLUE;
+            else if (!gamepad1.x && gamepad1.b) alliance = Alliance.RED;
+
+        }
 
         waitForStart();
 
@@ -146,6 +158,8 @@ public class TeleDrive extends LinearOpMode {
         motorRight.setDirection(DcMotorSimple.Direction.FORWARD);
         motorStorage.setDirection(DcMotorSimple.Direction.FORWARD);
         motorShoot.setDirection(DcMotorSimple.Direction.FORWARD);
+
+        motorStorage.setPower(MOTOR_STORAGE_SPEED);
 
         while (opModeIsActive()) {
             tick();
@@ -249,6 +263,21 @@ public class TeleDrive extends LinearOpMode {
 
         if (gamepad1.backWasPressed()) {
             imu.resetYaw();
+        }
+
+        if (gamepad1.rightBumperWasPressed()) {
+            shootBall();
+        }
+
+        if (gamepad1.y) {
+            double nextPos = servoPitch.getPosition() + SERVO_PITCH_SPEED;
+            if (nextPos > SERVO_PITCH_MAX) nextPos = SERVO_PITCH_MAX;
+            servoPitch.setPosition(nextPos);
+        }
+        if (gamepad1.a) {
+            double nextPos = servoPitch.getPosition() - SERVO_PITCH_SPEED;
+            if (nextPos < SERVO_PITCH_MIN) nextPos = SERVO_PITCH_MIN;
+            servoPitch.setPosition(nextPos);
         }
     }
 
@@ -555,7 +584,7 @@ public class TeleDrive extends LinearOpMode {
         }
     }
 
-    private void loadBall() {
+    private void shootBall() {
         ballLoadState = BallLoadState.LOADING;
         servoLoadBall.setPosition(SERVO_LOAD_BALL_ACTIVE_POSITION);
     }
