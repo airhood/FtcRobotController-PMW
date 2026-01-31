@@ -199,6 +199,7 @@ public class TeleDrive extends LinearOpMode {
         imu.initialize(imuParameters);
 
         telemetry.addLine("[Init] IMU initialized");
+        telemetry.update();
 
         initAprilTag();
 

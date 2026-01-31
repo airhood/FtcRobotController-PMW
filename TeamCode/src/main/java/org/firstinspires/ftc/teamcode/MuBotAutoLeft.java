@@ -3,7 +3,6 @@ package org.firstinspires.ftc.teamcode;
 import com.qualcomm.hardware.rev.RevHubOrientationOnRobot;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
@@ -11,7 +10,6 @@ import com.qualcomm.robotcore.hardware.IMU;
 import com.qualcomm.robotcore.hardware.NormalizedColorSensor;
 import com.qualcomm.robotcore.hardware.NormalizedRGBA;
 import com.qualcomm.robotcore.hardware.Servo;
-import com.qualcomm.robotcore.hardware.SwitchableLight;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
@@ -29,21 +27,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-@Autonomous(name = "Temp Auto")
-public class TempAuto extends LinearOpMode {
+@Autonomous(name = "MuBot Auto (Left)", group = "MuBot")
+public class MuBotAutoLeft extends LinearOpMode {
 
     private ElapsedTime runtime = new ElapsedTime();
 
     private IMU imu;
     private DcMotor motorLeft;
     private DcMotor motorRight;
-    private DcMotor motorBallIn;
-    private DcMotor motorBallOut;
-    private Servo servoLoadBall1;
-    private Servo servoLoadBall2;
-    private Servo servoLoadBall3;
-    private Servo servoYaw;
-    private Servo servoPitch;
+    private Servo servo1 = null;
 
     private Position cameraPosition = new Position(DistanceUnit.MM, 0, 0, 0, 0);
     private YawPitchRollAngles cameraOrientation = new YawPitchRollAngles(AngleUnit.DEGREES, 0, -90, 0, 0);
@@ -55,48 +47,55 @@ public class TempAuto extends LinearOpMode {
     private NormalizedColorSensor colorSensor2;
     private NormalizedColorSensor colorSensor3;
 
-    static final double COUNTS_PER_MOTOR_REV = 28;
-    static final double DRIVE_GEAR_REDUCTION = 19.2;
-    static final double WHEEL_DIAMETER_MM = 40;
-    static final double COUNTS_PER_MM = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_MM * Math.PI);
+    private static final double COUNTS_PER_MOTOR_REV = 28;
+    private static final double DRIVE_GEAR_REDUCTION = 19.2;
+    private static final double WHEEL_DIAMETER_MM = 95;
+    private static final double COUNTS_PER_MM = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_MM * Math.PI);
 
-    static final double DRIVE_SPEED_DEADZONE = 0.05;
-    static final double DRIVE_SPEED_EXPO = 0.3;
-    static final double DRIVE_SPEED_RC_RATE = 0.7;
-    static final double DRIVE_SPEED_SUPER_RATE = 0.0;
-    static final double DRIVE_SPEED_MAX_SENSITIVITY = 1.0;
+    private static final double DRIVE_SPEED_DEADZONE = 0.05;
+    private static final double DRIVE_SPEED_EXPO = 0.3;
+    private static final double DRIVE_SPEED_RC_RATE = 0.7;
+    private static final double DRIVE_SPEED_SUPER_RATE = 0.0;
+    private static final double DRIVE_SPEED_MAX_SENSITIVITY = 1.0;
 
-    static final double TURN_SPEED_DEADZONE = 0.05;
-    static final double TURN_SPEED_EXPO = 0.5;
-    static final double TURN_SPEED_RC_RATE = 0.25;
-    static final double TURN_SPEED_SUPER_RATE = 0.3;
-    static final double TURN_SPEED_MAX_SENSITIVITY = 0.7;
+    private static final double TURN_SPEED_DEADZONE = 0.05;
+    private static final double TURN_SPEED_EXPO = 0.5;
+    private static final double TURN_SPEED_RC_RATE = 0.25;
+    private static final double TURN_SPEED_SUPER_RATE = 0.3;
+    private static final double TURN_SPEED_MAX_SENSITIVITY = 0.7;
 
-    static final boolean WEB_CAM_MANUAL_EXPOSURE = true;
-    static final int WEB_CAM_EXPOSURE_MS = 6;
-    static final int WEB_CAM_GAIN = 250;
+    private static final boolean WEB_CAM_MANUAL_EXPOSURE = true;
+    private static final int WEB_CAM_EXPOSURE_MS = 6;
+    private static final int WEB_CAM_GAIN = 250;
 
-    static final float COLOR_SENSOR_GAIN = 0;
+    private static final float COLOR_SENSOR_GAIN = 0;
+
+    private static final double TILE_SIZE = 609.5;
+    private static final double SQRT_2 = 1.414;
+    private static final double PI = 3.141;
+    private static final double YAW_ROT_CIRCLE_RADIUS = 210;
+
+    private static final double AUTO_SPEED_STRAIGHT = 0.7;
+    private static final double AUTO_SPEED_ROTATION = 0.4;
 
     @Override
     public void runOpMode() {
-        //imu = hardwareMap.get(IMU.class, "imu");
+        imu = hardwareMap.get(IMU.class, "imu");
         motorLeft = hardwareMap.get(DcMotor.class, "motor1");
         motorRight = hardwareMap.get(DcMotor.class, "motor2");
-        motorBallIn = hardwareMap.get(DcMotor.class, "motor3");
-        motorBallOut = hardwareMap.get(DcMotor.class, "motor4");
+        servo1 = hardwareMap.get(Servo.class, "servo1");
 
         telemetry.addLine("[Init] hardwareMap initialized");
         telemetry.update();
 
-        //IMU.Parameters imuParameters = new IMU.Parameters(new RevHubOrientationOnRobot(
-        //        RevHubOrientationOnRobot.LogoFacingDirection.LEFT,
-        //        RevHubOrientationOnRobot.UsbFacingDirection.UP
-        //));
-        //imu.initialize(imuParameters);
+        IMU.Parameters imuParameters = new IMU.Parameters(new RevHubOrientationOnRobot(
+                RevHubOrientationOnRobot.LogoFacingDirection.BACKWARD,
+                RevHubOrientationOnRobot.UsbFacingDirection.UP
+        ));
+        imu.initialize(imuParameters);
 
-        //telemetry.addLine("[Init] IMU initialized");
-        //telemetry.update();
+        telemetry.addLine("[Init] IMU initialized");
+        telemetry.update();
 
         telemetry.addData("Status", "Initialized");
         telemetry.update();
@@ -105,10 +104,27 @@ public class TempAuto extends LinearOpMode {
 
         motorLeft.setDirection(DcMotorSimple.Direction.REVERSE);
         motorRight.setDirection(DcMotorSimple.Direction.FORWARD);
+        servo1.setPosition(0.05);
 
-        encoderDrive(new MotorAction(0.7, 500), new MotorAction(0.35, 250), 60);
+        telemetry.addLine("[Init] Servo set to homepoint");
+        telemetry.update();
+
+        telemetry.addData("Auto", "0");
+        telemetry.update();
+        encoderDrive(new MotorAction(AUTO_SPEED_STRAIGHT, TILE_SIZE * SQRT_2 * 2), new MotorAction(AUTO_SPEED_STRAIGHT, TILE_SIZE * SQRT_2 * 2), 15);
+        telemetry.addData("Auto", "1");
+        telemetry.update();
+        sleep(1000); // wait for the robot to stabilize its pose
+        encoderDrive(new MotorAction(-AUTO_SPEED_ROTATION, -1 * 2 * PI * YAW_ROT_CIRCLE_RADIUS * 0.125), new MotorAction(AUTO_SPEED_ROTATION, 2 * PI * YAW_ROT_CIRCLE_RADIUS * 0.125), 5);
+        telemetry.addData("Auto", "2");
+        telemetry.update();
+        sleep(1000);
+        encoderDrive(new MotorAction(AUTO_SPEED_STRAIGHT, TILE_SIZE * 1.25), new MotorAction(AUTO_SPEED_STRAIGHT, TILE_SIZE * 1.25), 5);
+        telemetry.addData("Auto", "3");
+        telemetry.update();
 
         while (opModeIsActive()) {
+            servo1.setPosition(0.05);
 
             telemetry.addData("Status", "Running");
             telemetry.update();
