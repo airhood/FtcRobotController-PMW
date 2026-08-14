@@ -19,6 +19,9 @@ public class LeoTeleManual extends LinearOpMode {
     private Servo liftServo;
     private boolean esrTriggered = false;
 
+    private boolean servoToggledUp = false;
+    private boolean servoButtonLast = false;
+
     @Override
     public void runOpMode() {
         drive = new Drive(hardwareMap);
@@ -44,29 +47,37 @@ public class LeoTeleManual extends LinearOpMode {
             }
 
             if (!esrTriggered) {
-                boolean boost = gamepad1.right_bumper;
                 double turnStick = gamepad1.left_stick_x;
                 double driveStick = -gamepad1.right_stick_y;
-                drive.driveArcade(turnStick, driveStick, boost);
+                drive.driveArcade(turnStick, driveStick, false);
             }
 
-            boolean intakeHeld = gamepad1.right_bumper || (gamepad1.right_trigger > TRIGGER_THRESHOLD);
-            if (intakeHeld) {
-                intake.start();
+            if (gamepad1.y) {
+                intake.feedToShooter();
+            } else if (gamepad1.x) {
+                intake.reverseFast();
+            } else if (gamepad1.b) {
+                intake.reverseSlow();
             } else {
-                intake.stop();
+                boolean intakeHeld = gamepad1.right_bumper || (gamepad1.right_trigger > TRIGGER_THRESHOLD);
+                if (intakeHeld) {
+                    intake.start();
+                } else {
+                    intake.stop();
+                }
             }
 
-            boolean servoHeld = gamepad1.left_bumper || (gamepad1.left_trigger > TRIGGER_THRESHOLD);
-            if (servoHeld) {
-                liftServo.setPosition(SERVO_LIFT_POSITION);
-            } else {
-                liftServo.setPosition(SERVO_IDLE_POSITION);
+            boolean servoButton = gamepad1.left_bumper || (gamepad1.left_trigger > TRIGGER_THRESHOLD);
+            if (servoButton && !servoButtonLast) {
+                servoToggledUp = !servoToggledUp;
+                liftServo.setPosition(servoToggledUp ? SERVO_LIFT_POSITION : SERVO_IDLE_POSITION);
             }
+            servoButtonLast = servoButton;
 
             telemetry.addData("ESR", esrTriggered ? "TRIGGERED" : "normal");
             telemetry.addData("Heading (deg)", "%.1f", drive.getCurrentHeadingDeg());
             telemetry.addData("Intake proximity", "%.1f", intake.getProximity());
+            telemetry.addData("Servo toggled", servoToggledUp);
             telemetry.update();
 
             sleep(20);

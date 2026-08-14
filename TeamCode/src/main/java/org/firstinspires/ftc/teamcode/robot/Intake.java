@@ -14,11 +14,14 @@ public class Intake {
 
     private static final double PROXIMITY_LOADED_THRESHOLD_MM = 30.0;
     private static final float GREEN_DOMINANT_RATIO = 1.3f;
-    private static final double INTAKE_POWER = 1.0;
+    private static final double INTAKE_POWER = 0.9;
 
     private static final double SERVO_IDLE_POSITION = 0.05;
     private static final double SERVO_LIFT_POSITION = 0.3;
     private static final double LOWER_DELAY_SEC = 2.0;
+
+    private static final double REVERSE_POWER = -0.3;
+    private static final double REVERSE_POWER_FAST = -0.9;
 
     private final NormalizedColorSensor colorSensor;
     private final DistanceSensor distanceSensor;
@@ -85,6 +88,14 @@ public class Intake {
 
     public void feedToShooter() {
         intakeMotor.setPower(INTAKE_POWER);
+    }
+
+    public void reverseSlow() {
+        intakeMotor.setPower(REVERSE_POWER);
+    }
+
+    public void reverseFast() {
+        intakeMotor.setPower(REVERSE_POWER_FAST);
     }
 
     public void start() {

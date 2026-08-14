@@ -22,6 +22,6 @@ public class Shooter {
 
     public void setPowerForDistance(double distanceMM) {
         // TODO: 거리 기반 파워 계산 미구현. 항상 고정값 반환.
-        setPower(0.8);
+        setPower(1.0);
     }
 }
