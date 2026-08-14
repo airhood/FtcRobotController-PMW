@@ -34,6 +34,7 @@ public class LeoAutoAimTest extends LinearOpMode {
 
     private double lastSeenRangeRaw = -1;
     private double lastSeenBearing = 0;
+    private Double targetHeadingLock = null;
 
     private static final String TAG_WEBCAM_NAME = "Webcam 1";
     private static final String ARTIFACT_WEBCAM_NAME = "Webcam 2";
@@ -55,11 +56,11 @@ public class LeoAutoAimTest extends LinearOpMode {
     private static final double SHOOT_SPOT_RANGE_MIN_MM = 800;
     private static final double SHOOT_SPOT_RANGE_MAX_MM = 1200;
     private static final double SHOOT_DURATION_SEC = 1.5;
-    
+
     private static final double RANDOM_MOVE_BACKWARD_SEC = 1.5;
     private static final double RANDOM_MOVE_TURN_SEC = 1.0;
     private static final double RANDOM_MOVE_FORWARD_SEC = 1.2;
-    private static final double RANDOM_MOVE_POWER = 0.35;
+    private static final double RANDOM_MOVE_POWER = 0.6;
 
     @Override
     public void runOpMode() {
@@ -92,6 +93,7 @@ public class LeoAutoAimTest extends LinearOpMode {
                     localizer.getUncertaintyX(), localizer.getUncertaintyY());
             telemetry.addData("Last seen range (raw, no conversion)", "%.2f", lastSeenRangeRaw);
             telemetry.addData("Last seen bearing (raw)", "%.2f", lastSeenBearing);
+            telemetry.addData("targetHeadingLock", targetHeadingLock == null ? "none" : String.format("%.1f", targetHeadingLock));
             telemetry.update();
 
             sleep(20);
@@ -151,59 +153,69 @@ public class LeoAutoAimTest extends LinearOpMode {
     private void handleAimAtGoal() {
         AprilTagDetection goalTag = vision.getGoalTagDetection(alliance);
 
-        if (goalTag == null || goalTag.ftcPose == null) {
-            double goalFieldX = (alliance == Alliance.BLUE) ? GOAL_BLUE_FIELD_X_MM : GOAL_RED_FIELD_X_MM;
-            double goalFieldY = (alliance == Alliance.BLUE) ? GOAL_BLUE_FIELD_Y_MM : GOAL_RED_FIELD_Y_MM;
+        if (goalTag != null && goalTag.ftcPose != null) {
+            double bearingError = goalTag.ftcPose.bearing;
+            double range = goalTag.ftcPose.range * 25.4;
 
-            double dx = goalFieldX - localizer.getX();
-            double dy = goalFieldY - localizer.getY();
-            double desiredHeading = Math.toDegrees(Math.atan2(dy, dx));
-            double headingError = normalizeAngle(desiredHeading - localizer.getHeadingDeg());
+            lastSeenRangeRaw = goalTag.ftcPose.range;
+            lastSeenBearing = bearingError;
 
-            telemetry.addData("tag", "not visible, searching toward EKF estimate");
-            telemetry.addData("desiredHeading", "%.1f", desiredHeading);
-            telemetry.addData("headingErrorToGoal", "%.1f", headingError);
+            targetHeadingLock = normalizeAngle(drive.getCurrentHeadingDeg() + bearingError);
 
-            if (Math.abs(headingError) < GOAL_HEADING_TOLERANCE_DEG) {
+            telemetry.addData("bearing", "%.1f", bearingError);
+            telemetry.addData("range (converted mm)", "%.1f", range);
+
+            boolean inShootSpotRange = range >= SHOOT_SPOT_RANGE_MIN_MM && range <= SHOOT_SPOT_RANGE_MAX_MM;
+            boolean headingAligned = Math.abs(bearingError) < GOAL_HEADING_TOLERANCE_DEG;
+
+            if (inShootSpotRange && headingAligned) {
                 drive.stop();
-            } else {
-                double turnDirection = (headingError >= 0) ? 1.0 : -1.0;
-                drive.setPowerRaw(-turnDirection * SEARCH_TURN_POWER * 0.5, turnDirection * SEARCH_TURN_POWER * 0.5);
+                transitionTo(State.SHOOT);
+                return;
             }
+
+            driveTowardLockedHeading(range);
             return;
         }
 
-        double bearingErrorRaw = goalTag.ftcPose.bearing;
-        double rangeRaw = goalTag.ftcPose.range;
+        if (targetHeadingLock != null) {
+            driveTowardLockedHeading(-1);
+            return;
+        }
 
-        lastSeenRangeRaw = rangeRaw;
-        lastSeenBearing = bearingErrorRaw;
+        double goalFieldX = (alliance == Alliance.BLUE) ? GOAL_BLUE_FIELD_X_MM : GOAL_RED_FIELD_X_MM;
+        double goalFieldY = (alliance == Alliance.BLUE) ? GOAL_BLUE_FIELD_Y_MM : GOAL_RED_FIELD_Y_MM;
 
-        double bearingError = bearingErrorRaw;
-        double range = rangeRaw * 25.4;
+        double dx = goalFieldX - localizer.getX();
+        double dy = goalFieldY - localizer.getY();
+        double desiredHeading = Math.toDegrees(Math.atan2(dy, dx));
+        double headingError = normalizeAngle(desiredHeading - localizer.getHeadingDeg());
 
-        telemetry.addData("bearing", "%.1f", bearingError);
-        telemetry.addData("range (converted mm)", "%.1f", range);
-        telemetry.addData("range (raw)", "%.2f", rangeRaw);
+        telemetry.addData("tag", "not visible, searching toward EKF estimate");
+        telemetry.addData("desiredHeading", "%.1f", desiredHeading);
+        telemetry.addData("headingErrorToGoal", "%.1f", headingError);
 
-        boolean inShootSpotRange = range >= SHOOT_SPOT_RANGE_MIN_MM && range <= SHOOT_SPOT_RANGE_MAX_MM;
-        boolean headingAligned = Math.abs(bearingError) < GOAL_HEADING_TOLERANCE_DEG;
-
-        if (inShootSpotRange && headingAligned) {
+        if (Math.abs(headingError) < GOAL_HEADING_TOLERANCE_DEG) {
             drive.stop();
-            transitionTo(State.SHOOT);
+        } else {
+            double turnDirection = (headingError >= 0) ? 1.0 : -1.0;
+            drive.setPowerRaw(-turnDirection * SEARCH_TURN_POWER, turnDirection * SEARCH_TURN_POWER);
+        }
+    }
+
+    private void driveTowardLockedHeading(double rangeMM) {
+        double imuHeadingError = normalizeAngle(targetHeadingLock - drive.getCurrentHeadingDeg());
+        double turnCorrection = clamp(imuHeadingError * 0.03, -0.3, 0.3);
+
+        if (rangeMM < 0) {
+            drive.setPowerRaw(-turnCorrection, turnCorrection);
             return;
         }
 
-        if (!inShootSpotRange) {
-            double driveDirection = (range > SHOOT_SPOT_RANGE_MAX_MM) ? 1.0 : -1.0;
-            double turnCorrection = clamp(bearingError * 0.02, -0.2, 0.2);
-            drive.setPowerRaw(driveDirection * APPROACH_DRIVE_POWER - turnCorrection, driveDirection * APPROACH_DRIVE_POWER + turnCorrection);
-            return;
-        }
+        boolean inShootSpotRange = rangeMM >= SHOOT_SPOT_RANGE_MIN_MM && rangeMM <= SHOOT_SPOT_RANGE_MAX_MM;
+        double driveDirection = inShootSpotRange ? 0.0 : ((rangeMM > SHOOT_SPOT_RANGE_MAX_MM) ? 1.0 : -1.0);
 
-        double turnPower = clamp(bearingError * 0.02, -0.3, 0.3);
-        drive.setPowerRaw(-turnPower, turnPower);
+        drive.setPowerRaw(driveDirection * APPROACH_DRIVE_POWER - turnCorrection, driveDirection * APPROACH_DRIVE_POWER + turnCorrection);
     }
 
     private void handleShoot() {
