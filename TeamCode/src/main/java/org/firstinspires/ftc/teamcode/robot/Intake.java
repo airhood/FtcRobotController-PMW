@@ -69,20 +69,17 @@ public class Intake {
     }
 
     public void update(boolean shooting) {
-        if (isArtifactLoaded()) {
-            notLoadedTimer.reset();
-            if (!servoLifted) {
-                liftServo.setPosition(SERVO_LIFT_POSITION);
-                servoLifted = true;
-                if (!shooting) {
-                    stop();
-                }
+        if (isArtifactLoaded() && !servoLifted) {
+            liftServo.setPosition(SERVO_LIFT_POSITION);
+            servoLifted = true;
+            if (!shooting) {
+                stop();
             }
-        } else {
-            if (servoLifted && notLoadedTimer.seconds() > LOWER_DELAY_SEC) {
-                liftServo.setPosition(SERVO_IDLE_POSITION);
-                servoLifted = false;
-            }
+        }
+
+        if (shooting && servoLifted && !isArtifactLoaded()) {
+            liftServo.setPosition(SERVO_IDLE_POSITION);
+            servoLifted = false;
         }
     }
 

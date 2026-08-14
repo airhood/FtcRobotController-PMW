@@ -1,9 +1,6 @@
 package org.firstinspires.ftc.teamcode.robot;
 
-import android.mtp.MtpConstants;
-
 import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
-import org.opencv.core.Mat;
 
 public class Localizer {
 
@@ -25,6 +22,8 @@ public class Localizer {
     private double y;
     private double theta;
 
+    private final double startHeadingOffsetDeg;
+
     private double pXX, pYY, pThetaTheta;
 
     private double lastAverageTicks;
@@ -34,6 +33,7 @@ public class Localizer {
         this.x = startX;
         this.y = startY;
         this.theta = startTheta;
+        this.startHeadingOffsetDeg = startTheta;
 
         this.pXX = 10.0;
         this.pYY = 10.0;
@@ -46,7 +46,6 @@ public class Localizer {
 
         if (!initialized) {
             lastAverageTicks = currentAverageTicks;
-            theta = currentHeading;
             initialized = true;
             return;
         }
@@ -56,7 +55,7 @@ public class Localizer {
 
         double deltaDistanceMM = deltaTicks * MM_PER_TICK;
 
-        theta = currentHeading;
+        theta = normalizeAngle(currentHeading + startHeadingOffsetDeg);
 
         double headingRad = Math.toRadians(theta);
         x += deltaDistanceMM * Math.cos(headingRad);
@@ -73,7 +72,7 @@ public class Localizer {
         double range = detection.ftcPose.range;
         double bearingRad = Math.toRadians(detection.ftcPose.bearing);
 
-        double measuredHeadingRad = Math.toRadians(theta); // 현재 추정 heading 기준으로 역산
+        double measuredHeadingRad = Math.toRadians(theta);
         double tagRelativeX = range * Math.cos(bearingRad + measuredHeadingRad);
         double tagRelativeY = range * Math.sin(bearingRad + measuredHeadingRad);
 

@@ -16,9 +16,9 @@ public class Drive {
     private final DcMotor motorRight;
 
     private static final RevHubOrientationOnRobot.LogoFacingDirection HUB_LOGO_DIRECTION =
-            RevHubOrientationOnRobot.LogoFacingDirection.UP;
+            RevHubOrientationOnRobot.LogoFacingDirection.BACKWARD;
     private static final RevHubOrientationOnRobot.UsbFacingDirection HUB_USB_DIRECTION =
-            RevHubOrientationOnRobot.UsbFacingDirection.FORWARD;
+            RevHubOrientationOnRobot.UsbFacingDirection.RIGHT;
 
     private static final double DRIVE_SPEED_DEADZONE = 0.10;
     private static final double DRIVE_SPEED_EXPO = 0.3;
