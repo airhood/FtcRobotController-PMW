@@ -37,6 +37,9 @@ public class LeoAuto extends LinearOpMode {
     private static final int BLOB_MISS_TOLERANCE_TICKS = 8;
     private double lastKnownBlobX = 0.0;
 
+    private final ElapsedTime ballNotVisibleTimer = new ElapsedTime();
+    private static final double INTAKE_OFF_DELAY_SEC = 2.0;
+
     private Drive drive;
     private Vision vision;
     private Intake intake;
@@ -89,9 +92,14 @@ public class LeoAuto extends LinearOpMode {
 
         waitForStart();
         stateTimer.reset();
+        ballNotVisibleTimer.reset();
 
         while (opModeIsActive()) {
             localizer.predict(drive);
+            intake.update(state == State.SHOOT);
+            if (state == State.SEARCH_ARTIFACT || state == State.APPROACH_ARTIFACT) {
+                updateIntakeMotor();
+            }
             updateLocalizerFromVision();
             updateTargetMotifIfDetected();
 
@@ -158,6 +166,24 @@ public class LeoAuto extends LinearOpMode {
         }
     }
 
+    private void updateIntakeMotor() {
+        if (intake.isArtifactLoaded()) {
+            return;
+        }
+
+        boolean ballVisible = vision.getLargestArtifactBlobAnyColor() != null;
+
+        if (ballVisible) {
+            ballNotVisibleTimer.reset();
+        }
+
+        if (ballVisible || ballNotVisibleTimer.seconds() < INTAKE_OFF_DELAY_SEC) {
+            intake.start();
+        } else {
+            intake.stop();
+        }
+    }
+
     private void handleSearchArtifact() {
         ColorBlobLocatorProcessor.Blob blob = vision.getLargestArtifactBlobAnyColor();
 
@@ -167,15 +193,11 @@ public class LeoAuto extends LinearOpMode {
             return;
         }
 
-        // TODO: 회전 방향/범위가 미정. 지금은 한 방향으로만 계속 회전.
         drive.setPowerRaw(-SEARCH_TURN_POWER, SEARCH_TURN_POWER);
     }
 
     private void handleApproachArtifact() {
-        intake.start();
-
         if (intake.isArtifactLoaded()) {
-            intake.stop();
             drive.stop();
             transitionTo(State.AIM_AT_GOAL);
             return;
@@ -198,7 +220,6 @@ public class LeoAuto extends LinearOpMode {
             lastKnownBlobX = blobX;
         }
 
-        // TODO: 미검증 임시 로직. 실제 로봇에서 게인/파워값 재조정 필요.
         double turnCorrection = blobX * 0.3;
         double leftPower = APPROACH_DRIVE_POWER + turnCorrection;
         double rightPower = APPROACH_DRIVE_POWER - turnCorrection;
@@ -210,7 +231,6 @@ public class LeoAuto extends LinearOpMode {
         AprilTagDetection goalTag = vision.getGoalTagDetection(alliance);
 
         if (goalTag == null || goalTag.ftcPose == null) {
-            // TODO: 탐색 범위/방향 미정
             drive.setPowerRaw(-SEARCH_TURN_POWER * 0.5, SEARCH_TURN_POWER * 0.5);
             return;
         }
@@ -240,6 +260,7 @@ public class LeoAuto extends LinearOpMode {
 
     private void handleShoot() {
         drive.stop();
+        intake.feedToShooter();
 
         double range = vision.getRangeToTag(
                 alliance == Alliance.RED ? Vision.TAG_ID_GOAL_RED : Vision.TAG_ID_GOAL_BLUE);
@@ -247,6 +268,7 @@ public class LeoAuto extends LinearOpMode {
 
         if (stateTimer.seconds() > SHOOT_DURATION_SEC) {
             shooter.stop();
+            intake.stop();
             transitionTo(State.PARK);
         }
     }

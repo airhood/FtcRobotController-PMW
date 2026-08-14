@@ -18,7 +18,7 @@ public class Intake {
 
     private static final double SERVO_IDLE_POSITION = 0.05;
     private static final double SERVO_LIFT_POSITION = 0.3;
-    private static final double LOWER_DELAY_SEC = 1.0;
+    private static final double LOWER_DELAY_SEC = 2.0;
 
     private final NormalizedColorSensor colorSensor;
     private final DistanceSensor distanceSensor;
@@ -35,7 +35,7 @@ public class Intake {
         intakeMotor = hardwareMap.get(DcMotor.class, "motor4");
         intakeMotor.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
 
-        liftServo = hardwareMap.get(Servo.class, "servo3");
+        liftServo = hardwareMap.get(Servo.class, "servo2");
         liftServo.setPosition(SERVO_IDLE_POSITION);
     }
 
@@ -61,12 +61,19 @@ public class Intake {
         return distanceSensor.getDistance(DistanceUnit.MM);
     }
 
-    public void update() {
+    public boolean isIdle() {
+        return !servoLifted;
+    }
+
+    public void update(boolean shooting) {
         if (isArtifactLoaded()) {
             notLoadedTimer.reset();
             if (!servoLifted) {
                 liftServo.setPosition(SERVO_LIFT_POSITION);
                 servoLifted = true;
+                if (!shooting) {
+                    stop();
+                }
             }
         } else {
             if (servoLifted && notLoadedTimer.seconds() > LOWER_DELAY_SEC) {
@@ -74,6 +81,10 @@ public class Intake {
                 servoLifted = false;
             }
         }
+    }
+
+    public void feedToShooter() {
+        intakeMotor.setPower(INTAKE_POWER);
     }
 
     public void start() {
